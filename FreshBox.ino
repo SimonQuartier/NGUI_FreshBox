@@ -74,6 +74,12 @@ void loop() {
 // columnNr: 0-1-2 (width 2, space 1)
 // amount: 0-100
 void fillColumn(int columnNr, int amount){
+  // reset column first
+  for(int h : initColumn){
+    leds[h+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
+  }
+	
+  // fill according to input
   for(int h = 0; h < ((int)(16 * (amount/100.0))); h++){
     colorLed(initColumn[h]+(columnNr*3), amount);
   }
