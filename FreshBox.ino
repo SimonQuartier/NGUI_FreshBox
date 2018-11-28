@@ -1,10 +1,9 @@
 
-
 // Libraries
 #include <dht.h>
 #include <LiquidCrystal.h>
 #include <ledmatrix.h>
-//#include <FastLED.h>
+#include <FastLED.h>
 
 // -----------------------
 // Hardware Initialisation
@@ -18,24 +17,27 @@ dht DHT;
 #define DHT11_PIN 7
 
 const int LED_BRIGHTNESS = 20;
-Ledmatrix LEDMatrix;
+//Ledmatrix LEDMatrix;
 
 // In library
-// LED Matrix: 8x8 Init
-//CRGB leds[64];
-//int initColumn[16] = {0,1,  8,9,  16,17,  24,25,  32,33,  40,41,  48,49,  56,57};
+//LED Matrix: 8x8 Init
+CRGB leds[64];
+int initColumn[16] = {0,1,  8,9,  16,17,  24,25,  32,33,  40,41,  48,49,  56,57};
+
+// Dummy var
+int dummy = 0;
 
 // -----------------------
 
 void setup() {
   // LCD Setup: number of columns and rows:
   lcd.begin(16, 2);
-  LEDMatrix.init(LED_BRIGHTNESS);
+  //LEDMatrix.init(LED_BRIGHTNESS);
 
 
   // LED Screen Setup in library
- // FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
- // FastLED.setBrightness(20);
+  FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
+  FastLED.setBrightness(20);
 }
 
 
@@ -48,9 +50,11 @@ void loop() {
   int temp_int = (int) temp;
   int hum_int = (int) hum;
 
+  dummy = (dummy + 10) % 100;
   // Show on Matrix
-  LEDMatrix.fillColumn(0, temp_int*2);
-  LEDMatrix.fillColumn(1, hum_int);
+  fillColumn(0, temp_int*2);
+  fillColumn(1, hum_int);
+  fillColumn(2, dummy);
 
   // Write on LCD
   lcd.setCursor(0,0); 
@@ -69,19 +73,26 @@ void loop() {
 
 // -----------------------
 // Matrix Code in library
-/*
+
 
 // columnNr: 0-1-2 (width 2, space 1)
 // amount: 0-100
 void fillColumn(int columnNr, int amount){
   // reset column first
-  for(int h : initColumn){
-    leds[h+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
-  }
+  clearColumn(columnNr);
 	
   // fill according to input
-  for(int h = 0; h < ((int)(16 * (amount/100.0))); h++){
+  int ledAmount = (int) (16 * (amount / 100.0));
+  // even out led amount for square bars
+  ledAmount = ledAmount % 2 == 0 ? ledAmount : ledAmount + 1; 
+  for(int h = 0; h < ledAmount; h++){
     colorLed(initColumn[h]+(columnNr*3), amount);
+  }
+}
+
+void clearColumn(int columnNr){
+  for(int h : initColumn){
+    leds[h+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
   }
 }
 
@@ -102,4 +113,3 @@ void colorLed(int ledID, int amount){
     leds[ledID] = CRGB(255,00,00); FastLED.show();
   }
 }
-*/
