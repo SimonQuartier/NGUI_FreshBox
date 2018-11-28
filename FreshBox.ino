@@ -50,7 +50,7 @@ void loop() {
   int temp_int = (int) temp;
   int hum_int = (int) hum;
 
-  dummy = (dummy + 10) % 100;
+  dummy = (dummy + 10) % 110;
   // Show on Matrix
   fillColumn(0, temp_int*2);
   fillColumn(1, hum_int);
@@ -78,38 +78,28 @@ void loop() {
 // columnNr: 0-1-2 (width 2, space 1)
 // amount: 0-100
 void fillColumn(int columnNr, int amount){
-  // reset column first
-  clearColumn(columnNr);
-	
+  // correct amount if needed
+  amount = min(100, amount);
+  amount = max(0, amount);
+  
   // fill according to input
   int ledAmount = (int) (16 * (amount / 100.0));
-  // even out led amount for square bars
-  ledAmount = ledAmount % 2 == 0 ? ledAmount : ledAmount + 1; 
-  for(int h = 0; h < ledAmount; h++){
-    colorLed(initColumn[h]+(columnNr*3), amount);
-  }
-}
 
-void clearColumn(int columnNr){
-  for(int h : initColumn){
-    leds[h+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
+  // loop over all leds of column & check if needs to be lit or not
+  for(int h = 0; h < 16; h++){
+	  if(h < ledAmount){
+		  colorLed(initColumn[h]+(columnNr*3), amount);
+	  }
+	  else{
+		  leds[initColumn[h]+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
+	  }
   }
 }
 
 // LED
 void colorLed(int ledID, int amount){
-  int perc = amount/25;
+	int max = 255;
 
-  if(perc < 1){
-    leds[ledID] = CRGB(00,255,00); FastLED.show();
-  }
-  else if(perc < 2){
-    leds[ledID] = CRGB(85,170,00); FastLED.show();
-  }
-  else if(perc < 3){
-    leds[ledID] = CRGB(170,85,00); FastLED.show();
-  }
-  else{
-    leds[ledID] = CRGB(255,00,00); FastLED.show();
-  }
+  // calculate % between red & green
+	leds[ledID] = CRGB((max*amount/100),(max*(100-amount)/100),00); FastLED.show();  
 }
