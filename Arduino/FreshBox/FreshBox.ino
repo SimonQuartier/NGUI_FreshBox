@@ -34,7 +34,6 @@ void setup() {
   lcd.begin(16, 2);
   //LEDMatrix.init(LED_BRIGHTNESS);
 
-
   // LED Screen Setup in library
   FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
   FastLED.setBrightness(20);
@@ -98,8 +97,8 @@ void fillColumn(int columnNr, int amount){
 
 // LED
 void colorLed(int ledID, int amount){
-	int max = 255;
+	int maxi = 255;
 
   // calculate % between red & green
-	leds[ledID] = CRGB((max*amount/100),(max*(100-amount)/100),00); FastLED.show();  
+	leds[ledID] = CRGB((maxi*amount/100),(maxi*(100-amount)/100),00); FastLED.show();
 }
