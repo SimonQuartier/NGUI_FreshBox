@@ -1,4 +1,5 @@
 // Libraries
+#include <GAS_MQ4.h>
 #include <dht.h>
 #include <LiquidCrystal.h>
 #include <FastLED.h>
@@ -9,6 +10,13 @@
 // LCD
 const uint8_t rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+// MQ4
+#define MQ4_DO_PIN 23
+#define MQ4_AO_PIN 13
+
+AnalogSensor::GAS_MQ4 MQ4(MQ4_AO_PIN); 
+int limit;
 
 // DHT
 #define DHT11_PIN 7
@@ -41,6 +49,13 @@ uint8_t dummy = 0;
 // -----------------------
 
 void setup() {
+
+  // MQ4
+  pinMode(MQ4_DO_PIN, INPUT);
+  MQ4.calibrate();
+  
+  limit= digitalRead(MQ4_DO_PIN);//reads the digital value from the methane sensor's DOUT pin
+  
   // LCD Setup: number of columns and rows:
   lcd.begin(16, 2);
 
@@ -57,6 +72,9 @@ void loop() {
   photovalue1 = analogRead(PHOTORESISTOR1_PIN);
   photovalue2 = analogRead(PHOTORESISTOR2_PIN);
   surround = lightSurrounding(photovalue1, photovalue2);
+
+  // Read Mehtane Value
+  int CH4_PPM = MQ4.read();
 
   // Read DHT data
   chk = DHT.read11(DHT11_PIN);
