@@ -1,4 +1,5 @@
 // Libraries
+#include <GAS_MQ4.h>
 #include <dht.h>
 #include <LiquidCrystal.h>
 #include <FastLED.h>
@@ -9,6 +10,13 @@
 // LCD
 const uint8_t rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+// MQ4
+#define MQ4_DO_PIN 23
+#define MQ4_AO_PIN 13
+
+AnalogSensor::GAS_MQ4 MQ4(MQ4_AO_PIN); 
+int limit;
 
 // DHT
 #define DHT11_PIN 7
