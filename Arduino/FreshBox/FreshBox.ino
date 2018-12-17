@@ -13,13 +13,14 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 // DHT
 #define DHT11_PIN 7
 dht DHT;
+const int TYPE_HUMI = 501;
+const int TYPE_TEMP = 502;
 
-int chk;
-double temperature;
-double humidity;
+String status_text1;
+String status_text2;
 
-// LED
-const uint8_t LED_BRIGHTNESS = 20;
+// LED MATRIX
+const uint8_t LED_BRIGHTNESS = 30;
 CRGB leds[64];
 int initColumn[16] = {0,1,  8,9,  16,17,  24,25,  32,33,  40,41,  48,49,  56,57};
 
@@ -35,74 +36,152 @@ bool surround = false;
 
 const uint8_t LIGHT_THRESHOLD = 250; // Threshold for a light surrounding
 
+// AMBIENT LEDS
+int redPin= 8;
+int greenPin = 9;
+int bluePin = 10;
+
+const int STATUS_GOOD = 100;
+const int STATUS_WARNING = 200;
+const int STATUS_BAD = 300;
+
+int current_status = STATUS_GOOD;
+
+// MQ Sensors
+const int mq4out = 0;
+const int mq136out = 2;
+const int mq137out = 1;
+
+int mq4value;
+int mq136value;
+int mq137value;
+
+int METHANE_NORMAL_VALUE = 500;
+
 // Dummy var
 uint8_t dummy = 0;
 
 // -----------------------
 
 void setup() {
-  // LCD Setup: number of columns and rows:
-  lcd.begin(16, 2);
-
-  // LED Screen Setup in library
-  FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
-  FastLED.setBrightness(20);
+  Serial.begin(115200);
+  setupLcd();
+  setupLedMatrix();
+  setupAmbientLeds();
 }
 
-
-
 void loop() {
-  
-  // Read Photo Values
+  runLcdAndLedMatrix();
+  runAmbientLeds(current_status);
+}
+
+void setupLcd() {
+  // LCD Setup: number of columns and rows:
+  lcd.begin(16, 2);
+}
+
+void setupLedMatrix() {
+  // LED Screen Setup in library
+  FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
+  FastLED.setBrightness(LED_BRIGHTNESS);
+}
+
+void setupAmbientLeds() {
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, OUTPUT);
+}
+
+void runAmbientLeds(int status) {
+	switch(status) {
+	case STATUS_GOOD:
+	  setColor(0, 50, 0); // Green Color
+	  break;
+	case STATUS_WARNING:
+	  setColor(100, 25, 0); // Orange Color
+	  break;
+	case STATUS_BAD:
+	  setColor(255, 0, 0); // Red Color
+	  break;
+	}
+}
+
+void runLcdAndLedMatrix() {
+	int chk = DHT.read11(DHT11_PIN);
+	double temperature = DHT.temperature;
+	double humidity = DHT.humidity;
+	bool surround = isSurround();
+
+  int methane = getMethane();
+
+  colorAmbientLeds(temperature, humidity, methane);
+  setStatusText(temperature, humidity, methane);
+
+	if (surround) {
+		// LED Matrix
+		// dummy = (dummy + 10) % 110;
+		// Show on Matrix
+		fillColumn(0, ((int) temperature)*2);
+		fillColumn(1, (int) humidity);
+		fillColumn(2, methane);
+
+		// Write on LCD
+		lcd.clear();
+		lcd.setCursor(0,0); 
+    lcd.print(status_text1);
+    lcd.setCursor(0,1);
+    lcd.print(status_text2);
+//		lcd.print("Temp: ");
+//		lcd.print(temperature);
+//		lcd.print((char)223);
+//		lcd.print("C");
+
+//		lcd.setCursor(0,1);
+//		lcd.print("Humidity: ");
+//		lcd.print(humidity);
+//		lcd.print("%");
+	}
+	else {
+		if (old_surround) {
+		  // do nothing as the box stays in the same (off) state
+		}
+		else {
+		  lcd.clear();
+		  fillColumn(0, 0);
+		  fillColumn(1, 0);
+		  fillColumn(2, 0);
+
+		  // TODO dim LCD
+		}
+	}
+	old_surround = surround;
+	delay(2000);
+}
+
+bool isSurround(){
   photovalue1 = analogRead(PHOTORESISTOR1_PIN);
   photovalue2 = analogRead(PHOTORESISTOR2_PIN);
-  surround = lightSurrounding(photovalue1, photovalue2);
+  return lightSurrounding(photovalue1, photovalue2);
+}
 
-  // Read DHT data
-  chk = DHT.read11(DHT11_PIN);
-  temperature = DHT.temperature;
-  humidity = DHT.humidity;
+// MQ-4 Sensor
+int getMethane(){
+  mq4value = analogRead(mq4out);
+  Serial.print("Methane value: ");
+  Serial.println(mq4value);//prints the methane value
+  return map(mq4value, 400, 700, 0, 100);
+}
 
-  if (surround) {
-    // LED Matrix
-    dummy = (dummy + 10) % 110;
-    // Show on Matrix
-    fillColumn(0, ((int) temperature)*2);
-    fillColumn(1, (int) humidity);
-    fillColumn(2, dummy);
+void runMq136(){
+  mq4value = analogRead(mq136out);
+  Serial.print("Hydrogen Sulfide value: ");
+  Serial.println(mq136value);//prints the methane value
+}
 
-    // Write on LCD
-    lcd.clear();
-    lcd.setCursor(0,0); 
-    lcd.print("Temp: ");
-    lcd.print(temperature);
-    lcd.print((char)223);
-    lcd.print("C");
-    lcd.print(" S");
-    lcd.print(surround);
-  
-    lcd.setCursor(0,1);
-    lcd.print("Humidity: ");
-    lcd.print(humidity);
-    lcd.print("%");
-  }
-  else {
-    if (old_surround) {
-      // do nothing as the box stays in the same (off) state
-    }
-    else {
-      lcd.clear();
-      fillColumn(0, 0);
-      fillColumn(1, 0);
-      fillColumn(2, 0);
-
-      // TODO dim LCD
-    }
-  }
-  old_surround = surround;
-
-  // Execute Loop every 2 seconds
-  delay(2000);
+void runMq137(){
+  mq4value = analogRead(mq137out);
+  Serial.print("Ammonia value: ");
+  Serial.println(mq137value);//prints the methane value
 }
 
 // ------------------
@@ -132,14 +211,77 @@ void fillColumn(uint16_t columnNr, uint16_t amount){
       colorLed(initColumn[h]+(columnNr*3), amount);
     }
     else{
-      leds[initColumn[h]+(columnNr*3)] = CRGB(00,00,00); FastLED.show();
+      leds[initColumn[h]+(columnNr*3)] = CRGB(00,00,00);
+      FastLED.show();
     }
   }
 }
 
-// LED
+// LED Matrix
 void colorLed(int ledID, int amount){
   uint8_t maxi = 255;
   // calculate % between red & green
-  leds[ledID] = CRGB((maxi*amount/100),(maxi*(100-amount)/100),00); FastLED.show();
+  leds[ledID] = CRGB((maxi*amount/100),(maxi*(100-amount)/100),00);
+  FastLED.show();
+}
+
+// Ambient leds
+void colorAmbientLeds(int tmp, int hum, int gas) {
+  if (tmp >= 75 || hum >= 75 || gas >= 75) {
+    current_status = STATUS_BAD;
+  } else if (tmp >= 50 || hum >= 50 || gas >= 50) {
+    current_status = STATUS_WARNING;
+  } else {
+    current_status = STATUS_GOOD;
+  }
+}
+
+void setStatusText(int tmp, int hum, int gas) {
+  if (tmp >= 75 && hum >= 75 && gas >= 75) {
+    status_text1 = "Condition bad!";
+    status_text2 = "Discard contents";
+  } else if (tmp >= 75) {
+    status_text1 = "High temperature";
+    status_text2 = "Discard contents";
+  } else if (hum >= 75) {
+    status_text1 = "High humidity";
+    status_text2 = "Discard contents";
+  } else if (gas >= 75) {
+    status_text1 = "High methane";
+    status_text2 = "Discard contents";
+  } else if (tmp >= 50 && hum >= 50 && gas >= 50) {
+    status_text1 = "Warning";
+    status_text2 = "Discard contents";
+  } else if (tmp >= 50) {
+    status_text1 = "Warning";
+    status_text2 = "Cool contents";
+  } else if (hum >= 50) {
+    status_text1 = "Warning";
+    status_text2 = "Consume now";
+  } else if (hum >= 50) {
+    status_text1 = "Warning";
+    status_text2 = "Consume now";
+  } else {
+    status_text1 = "OK";
+    status_text2 = "Safe to consume";
+  }
+}
+
+// AMBIENT LEDS
+void setColor(int redValue, int greenValue, int blueValue) {
+  analogWrite(bluePin, blueValue);
+  if ((blueValue == 0) && (greenValue == 0)) {
+     analogWrite(greenPin, greenValue);
+     analogWrite(redPin, redValue);
+     analogWrite(greenPin, greenValue);
+     analogWrite(bluePin, blueValue);
+     delay(100);
+     analogWrite(redPin, 0);
+     analogWrite(greenPin, 0);
+     analogWrite(bluePin, 0);
+  }
+  else {
+    analogWrite(redPin, redValue);
+    analogWrite(greenPin, greenValue);
+  }
 }
