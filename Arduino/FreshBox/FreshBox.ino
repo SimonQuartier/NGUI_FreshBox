@@ -1,207 +1,289 @@
-// Libraries
-#include <GAS_MQ4.h>
-#include <dht.h>
-#include <LiquidCrystal.h>
-#include <FastLED.h>
+/*
+ * ****************************************************
+ *  Project FreshBox                                  *
+ *  Course: Next Generation User Interface: 2018-2019 *
+ *  Authors:                                          *
+ *  - Quartier Simon                                  *   
+ *  - Schautteet Adrien                               *
+ *  - Joachim Alvarez-Rodriguez                       *
+ * ****************************************************  
+*/
 
-// -----------------------
-// Hardware Initialisation
+// Libraries
+#include <dht.h>           // temp + hum sensor lib
+#include <LiquidCrystal.h> // LCD lib
+#include <FastLED.h>       // led matrix lib
+
+// ------------------------------------------------------------------
+// Configuration of the box :
+// done via the mobile application, wifi shield was not available 
+// Extra code for the connection is required 
+
+#define CONTENT_MEAT 0
+#define CONTENT_FISH 1
+#define CONTENT_VEGE 2
+
+uint8_t box_contents;
+
+void set_box_contents(String cont) {
+  if (cont == "Meat") {
+    box_contents = CONTENT_MEAT;
+  }
+  else if (cont == "Fish") {
+    box_contents = CONTENT_FISH;
+  }
+  else if (cont == "Vegetables") {
+    box_contents = CONTENT_VEGE;
+  }
+}
+
+// -------------------------------------------------------------------
+// Hardware Initialisation: 
+// - Pin definitions
+// - Globals to store the values
+// - Setup code
+
+// Gas = methane/ammonia/hydrogen_sulfide dependent on the box content
+uint16_t gas;
+
+// -------------------------------
+// Sensors: MQ4, MQ136, MQ137, DHT
+
+// MQ4: methane: NH4
+#define MQ4_AO_PIN 0
+uint16_t methane = 0;
+#define METHANE_NORMAL_VALUE 500
+
+// MQ136: hydrogen sulfide: Sn02
+#define MQ136_AO_PIN 2
+uint16_t hydrogen_sulfide = 0; 
+
+// MQ137: NH3
+#define MQ137_AO_PIN 1
+uint16_t ammonia = 0;
+
+// DHT: Temperature + Humidity
+#define DHT11_PIN 7
+#define TYPE_HUMI 501
+#define TYPE_TEMP 502
+dht DHT;
+int chk;
+double temperature;
+double humidity;
+
+// ----------------------------
+// UI: LCD, LED Matrix, Ambient
 
 // LCD
 const uint8_t rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+String status_text1; // Message on first row of LCD
+String status_text2; // Message on second row of LCD
 
-// MQ4
-#define MQ4_DO_PIN 23
-#define MQ4_AO_PIN 13
+// LED
+#define NR_OF_LEDS 64 // 8x8 Led Matrix
+#define LED_BRIGHTNESS 20 // Keep the brightness of the LED Matrix Leds Low (these are super bright)!
+CRGB leds[NR_OF_LEDS]; // 8x8 Led Matrix
+int initColumn[16] = {0,1,  8,9,  16,17,  24,25,  32,33,  40,41,  48,49,  56,57}; // Col Offsets
 
-AnalogSensor::GAS_MQ4 MQ4(MQ4_AO_PIN); 
-int limit;
+// AMBIENT LEDS
+#define RED_LED_PIN 8
+#define GREEN_LED_PIN 9
+#define BLUE_LED_PIN 10
 
-// DHT
-#define DHT11_PIN 7
-dht DHT;
-const int TYPE_HUMI = 501;
-const int TYPE_TEMP = 502;
+#define STATUS_GOOD 0
+#define STATUS_WARNING 1
+#define STATUS_BAD 2
 
-String status_text1;
-String status_text2;
-
-// LED MATRIX
-const uint8_t LED_BRIGHTNESS = 30;
-CRGB leds[64];
-int initColumn[16] = {0,1,  8,9,  16,17,  24,25,  32,33,  40,41,  48,49,  56,57};
+uint8_t current_status = STATUS_GOOD;
 
 // Photoresistor
 #define PHOTORESISTOR1_PIN 14
 #define PHOTORESISTOR2_PIN 15
-
+#define LIGHT_THRESHOLD 250 // Threshold for a light environment
 uint16_t photovalue1 = 0;  // light sensor value [0,1023]. 
-uint16_t photovalue2 = 0;  // light sensor value [0,1023]. 
+uint16_t photovalue2 = 0;  // light sensor value [0,1023].
 
-bool old_surround = false;
-bool surround = false; 
+// old_light_env is used to keep track of a change of environment (light/dark) of the box
+bool old_light_env = false;
+bool light_env = false; 
 
-const uint8_t LIGHT_THRESHOLD = 250; // Threshold for a light surrounding
-
-// AMBIENT LEDS
-int redPin= 8;
-int greenPin = 9;
-int bluePin = 10;
-
-const int STATUS_GOOD = 100;
-const int STATUS_WARNING = 200;
-const int STATUS_BAD = 300;
-
-int current_status = STATUS_GOOD;
-
-// MQ Sensors
-const int mq4out = 0;
-const int mq136out = 2;
-const int mq137out = 1;
-
-int mq4value;
-int mq136value;
-int mq137value;
-
-int METHANE_NORMAL_VALUE = 500;
-
-// Dummy var
-uint8_t dummy = 0;
-
-// -----------------------
+// -------------------------------------------------------------------
+// Setup
 
 void setup() {
-  Serial.begin(115200);
   setupLcd();
   setupLedMatrix();
   setupAmbientLeds();
 }
 
-void loop() {
-  runLcdAndLedMatrix();
-  runAmbientLeds(current_status);
-}
-
+// LCD Setup: number of columns and rows
 void setupLcd() {
-  // LCD Setup: number of columns and rows:
   lcd.begin(16, 2);
 }
 
+// LED Matrix Setup in library
 void setupLedMatrix() {
-  // LED Screen Setup in library
-  FastLED.addLeds<NEOPIXEL, 6>(leds, 64); 
+  FastLED.addLeds<NEOPIXEL, 6>(leds, NR_OF_LEDS); 
   FastLED.setBrightness(LED_BRIGHTNESS);
 }
 
+// Set RGB LED pins to OUTPUT pins
 void setupAmbientLeds() {
-  pinMode(redPin, OUTPUT);
-  pinMode(greenPin, OUTPUT);
-  pinMode(bluePin, OUTPUT);
+  pinMode(RED_LED_PIN,   OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(BLUE_LED_PIN,  OUTPUT);
 }
 
-void runAmbientLeds(int status) {
-	switch(status) {
-	case STATUS_GOOD:
-	  setColor(0, 50, 0); // Green Color
-	  break;
-	case STATUS_WARNING:
-	  setColor(100, 25, 0); // Orange Color
-	  break;
-	case STATUS_BAD:
-	  setColor(255, 0, 0); // Red Color
-	  break;
-	}
+// -------------------------------------------------------------------
+// Program
+
+void loop() {
+  // Read Sensor Data
+  DHT.read11(DHT11_PIN);
+  temperature = DHT.temperature;
+  humidity = DHT.humidity;
+
+  switch(box_contents) {
+    case CONTENT_MEAT:
+      methane = getMethane();
+      gas = methane;
+      break;
+    case CONTENT_FISH:
+      ammonia = getAmmonia();
+      gas = ammonia;
+      break;
+    case CONTENT_VEGE:
+      hydrogen_sulfide = getHydrogenSulfide();
+      gas = hydrogen_sulfide;
+      break;
+    default: break;
+      
+  }
+
+  // photoresistor data
+  light_env = is_light_env();
+
+  // Logic
+  SetBoxStatus(temperature, humidity, gas);
+
+  // UI
+  if (light_env) {
+    // Light env: show 
+    showLCD(status_text1, status_text2);
+    showLEDMatrix(temperature, humidity, gas);
+    runAmbientLeds(current_status);
+  } else {
+    if (old_light_env) {
+      // do nothing as the box stays in the same (off) state
+    }
+    else {
+      // Turn the LCD and Led Matrix Off
+      // Future Work: Turn off LCD/ Dim background (this is extremely difficult to find)
+      lcd.clear();
+      showLEDMatrix(0, 0, 0);
+    }
+  }
+  // set old status to current status 
+  old_light_env = light_env;
+
+  // Delay of 2000 is good for demo practices, in real life this should be a lot longer (10000+)
+  delay(2000);
 }
 
-void runLcdAndLedMatrix() {
-	int chk = DHT.read11(DHT11_PIN);
-	double temperature = DHT.temperature;
-	double humidity = DHT.humidity;
-	bool surround = isSurround();
+// -------------------------------------------------------------------
+// Program Logic 
 
-  int methane = getMethane();
+// --------------------------------------------------
+// Logic
+// This function determines the state of the box 
+// Temperature, Humidity and Gas values are compared
+// Importance Order: Gas > Humidity > Temperature
 
-  colorAmbientLeds(temperature, humidity, methane);
-  setStatusText(temperature, humidity, methane);
+void SetBoxStatus(int tmp, int hum, int gas) {
+  // check if any values exceeds the threshold value
+  if (hum >= 75 || gas >= 75) {
+    current_status = STATUS_BAD;
+    status_text2 = "Discard contents"; 
 
-	if (surround) {
-		// LED Matrix
-		// dummy = (dummy + 10) % 110;
-		// Show on Matrix
-		fillColumn(0, ((int) temperature)*2);
-		fillColumn(1, (int) humidity);
-		fillColumn(2, methane);
-
-		// Write on LCD
-		lcd.clear();
-		lcd.setCursor(0,0); 
-    lcd.print(status_text1);
-    lcd.setCursor(0,1);
-    lcd.print(status_text2);
-//		lcd.print("Temp: ");
-//		lcd.print(temperature);
-//		lcd.print((char)223);
-//		lcd.print("C");
-
-//		lcd.setCursor(0,1);
-//		lcd.print("Humidity: ");
-//		lcd.print(humidity);
-//		lcd.print("%");
-	}
-	else {
-		if (old_surround) {
-		  // do nothing as the box stays in the same (off) state
-		}
-		else {
-		  lcd.clear();
-		  fillColumn(0, 0);
-		  fillColumn(1, 0);
-		  fillColumn(2, 0);
-
-		  // TODO dim LCD
-		}
-	}
-	old_surround = surround;
-	delay(2000);
+    if (tmp >= 75 && hum >= 75 && gas >= 75) {
+      status_text1 = "Condition bad!";
+    } else if (gas >= 75) {
+        status_text1 = "High Gas Concentration";
+    } else if (hum >= 75) {
+        status_text1 = "High humidity";
+    } else if (tmp >= 75) {
+        status_text1 = "High temperature";
+    }
+ // Warning Values + recommendation
+  } else if (tmp >= 50 || hum >= 50 || gas >= 50) { //
+    current_status = STATUS_WARNING;
+    status_text1 = "Warning";
+    if (tmp >= 50 && hum >= 50 && gas >= 50) {
+      status_text2 = "Discard contents";
+    } else if (tmp >= 50) {
+        status_text2 = "Cool contents";
+    } else {
+        status_text2 = "Consume now";
+    }
+  } else { // default when ok
+    current_status = STATUS_GOOD;
+    status_text1 = "OK";
+    status_text2 = "Safe to consume";
+  }
 }
 
-bool isSurround(){
-  photovalue1 = analogRead(PHOTORESISTOR1_PIN);
-  photovalue2 = analogRead(PHOTORESISTOR2_PIN);
-  return lightSurrounding(photovalue1, photovalue2);
+// -------
+// Sensors
+// Reading Raw Sensor data (Voltage):
+// - Easier to measure fluctuations applied to this project
+// - No libraries exist at the moment (math is out of the score of this course)
+// - 
+
+// NH4
+uint16_t getMethane() {
+  methane = analogRead(MQ4_AO_PIN);
+  return map(methane, 400, 700, 0, 100);
+}
+// Sn02
+uint16_t getHydrogenSulfide() {
+  hydrogen_sulfide = analogRead(MQ136_AO_PIN);
+  return map(hydrogen_sulfide, 400, 700, 0, 100);
 }
 
-// MQ-4 Sensor
-int getMethane(){
-  mq4value = analogRead(mq4out);
-  Serial.print("Methane value: ");
-  Serial.println(mq4value);//prints the methane value
-  return map(mq4value, 400, 700, 0, 100);
+// NH3
+uint16_t getAmmonia() {
+  ammonia = analogRead(MQ137_AO_PIN);
+  return map(ammonia, 400, 700, 0, 100);
 }
 
-void runMq136(){
-  mq4value = analogRead(mq136out);
-  Serial.print("Hydrogen Sulfide value: ");
-  Serial.println(mq136value);//prints the methane value
+// -------------------------------------
+// User Interface
+// LCD, LED Matrix, Ambient Illuminating
+
+// ---
+// LCD
+
+// Shows 2 text messages on LCD screen
+void showLCD(String status_text1, String status_text2) {
+  lcd.clear(); // remove old text
+  lcd.setCursor(0,0); // start writing on the firt char of the first line
+  lcd.print(status_text1); // write condition
+  lcd.setCursor(0,1); // start writing on the firt char of the second line
+  lcd.print(status_text2); // write status msg
 }
 
-void runMq137(){
-  mq4value = analogRead(mq137out);
-  Serial.print("Ammonia value: ");
-  Serial.println(mq137value);//prints the methane value
+// -----------
+// LED Matrix
+
+
+// Visualise Data on LED Matrix: 3 columns + 2 empty columns
+void showLEDMatrix(int temperature, int humidity, int gas) {
+  fillColumn(0, ((int) temperature)*2); // show temp on led matrix
+  fillColumn(1, (int) humidity); // show humidity on led matrix
+  fillColumn(2, gas); // show gas values on led matrix
 }
 
-// ------------------
-// Photoresistor Code
-
-bool lightSurrounding(uint16_t value1, uint16_t value2) {
-  return ((value1 > LIGHT_THRESHOLD) || (value2 > LIGHT_THRESHOLD));
-}
-
-
-// ---------------
-// LED Matrix Code
 
 // columnNr: 0-1-2 (width 2, space 1)
 // amount: 0-100
@@ -214,7 +296,7 @@ void fillColumn(uint16_t columnNr, uint16_t amount){
   int ledAmount = (int) (16 * (amount / 100.0));
 
   // loop over all leds of column & check if needs to be lit or not
-  for(int h = 0; h < 16; h++){
+  for(uint8_t h = 0; h < 16; h++){
     if(h < ledAmount){
       colorLed(initColumn[h]+(columnNr*3), amount);
     }
@@ -225,71 +307,60 @@ void fillColumn(uint16_t columnNr, uint16_t amount){
   }
 }
 
-// LED Matrix
-void colorLed(int ledID, int amount){
+void colorLed(uint8_t ledID, int amount){
   uint8_t maxi = 255;
   // calculate % between red & green
   leds[ledID] = CRGB((maxi*amount/100),(maxi*(100-amount)/100),00);
   FastLED.show();
 }
 
-// Ambient leds
-void colorAmbientLeds(int tmp, int hum, int gas) {
-  if (tmp >= 75 || hum >= 75 || gas >= 75) {
-    current_status = STATUS_BAD;
-  } else if (tmp >= 50 || hum >= 50 || gas >= 50) {
-    current_status = STATUS_WARNING;
-  } else {
-    current_status = STATUS_GOOD;
+// ------------------
+// Photoresistor Code
+
+// Determines if the box is in a illuminated environment
+// Only if both sensors sense light
+bool is_light_env(){
+  photovalue1 = analogRead(PHOTORESISTOR1_PIN);
+  photovalue2 = analogRead(PHOTORESISTOR2_PIN);
+  return ((photovalue1 > LIGHT_THRESHOLD) || (photovalue2 > LIGHT_THRESHOLD));
+}
+
+// ------------------
+// Ambient Code 
+// 3 statuses can be shown: Green | Orange | Red
+// Red status has to blink to be extra clear for the user
+// ! 220 Ohm Resistor is used instead of 270 Ohm Resistor
+// Light Values are kept somewhat lower due to this
+
+void runAmbientLeds(uint8_t status) {
+  switch(status) {
+    case STATUS_GOOD:
+      setColor(0, 150, 0); // Green Color
+      break;
+    case STATUS_WARNING:
+      setColor(100, 25, 0); // Orange Color
+      break;
+    case STATUS_BAD:
+      setColor(150, 0, 0); // Red Color
+      break;
   }
 }
 
-void setStatusText(int tmp, int hum, int gas) {
-  if (tmp >= 75 && hum >= 75 && gas >= 75) {
-    status_text1 = "Condition bad!";
-    status_text2 = "Discard contents";
-  } else if (tmp >= 75) {
-    status_text1 = "High temperature";
-    status_text2 = "Discard contents";
-  } else if (hum >= 75) {
-    status_text1 = "High humidity";
-    status_text2 = "Discard contents";
-  } else if (gas >= 75) {
-    status_text1 = "High methane";
-    status_text2 = "Discard contents";
-  } else if (tmp >= 50 && hum >= 50 && gas >= 50) {
-    status_text1 = "Warning";
-    status_text2 = "Discard contents";
-  } else if (tmp >= 50) {
-    status_text1 = "Warning";
-    status_text2 = "Cool contents";
-  } else if (hum >= 50) {
-    status_text1 = "Warning";
-    status_text2 = "Consume now";
-  } else if (hum >= 50) {
-    status_text1 = "Warning";
-    status_text2 = "Consume now";
-  } else {
-    status_text1 = "OK";
-    status_text2 = "Safe to consume";
+// Arduino does not support multiple threads such that blinking is somewhat a hack
+void setColor(uint8_t redValue, uint8_t greenValue, uint8_t blueValue) {
+  if ((blueValue == 0) && (greenValue == 0)) { // BLINK for Red
+     analogWrite(RED_LED_PIN,   redValue);
+     analogWrite(GREEN_LED_PIN, greenValue);
+     analogWrite(BLUE_LED_PIN,  blueValue);
+     delay(100); // Set small delay to provide a blinking experience
+     // Turn led off
+     analogWrite(RED_LED_PIN,   0);
+     analogWrite(GREEN_LED_PIN, 0);
+     analogWrite(BLUE_LED_PIN,  0);
   }
-}
-
-// AMBIENT LEDS
-void setColor(int redValue, int greenValue, int blueValue) {
-  analogWrite(bluePin, blueValue);
-  if ((blueValue == 0) && (greenValue == 0)) {
-     analogWrite(greenPin, greenValue);
-     analogWrite(redPin, redValue);
-     analogWrite(greenPin, greenValue);
-     analogWrite(bluePin, blueValue);
-     delay(100);
-     analogWrite(redPin, 0);
-     analogWrite(greenPin, 0);
-     analogWrite(bluePin, 0);
-  }
-  else {
-    analogWrite(redPin, redValue);
-    analogWrite(greenPin, greenValue);
+  else { // Ambient for Orange or Green
+    analogWrite(RED_LED_PIN,   redValue);
+    analogWrite(GREEN_LED_PIN, greenValue);
+    analogWrite(BLUE_LED_PIN,  blueValue);
   }
 }
