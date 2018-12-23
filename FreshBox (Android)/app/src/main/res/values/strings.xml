@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">FreshBox</string>
+    <string name="main_title">FreshBox Configuration</string>
+    <string name="main_config">Select box content type:</string>
+    <string name="btn_meat">Meat</string>
+    <string name="btn_fish">Fish</string>
+    <string name="btn_veg">Fruits &amp; Veggies</string>
+    <string name="title_activity_main">MainActivity</string>
+    <string name="btn_conf">Configure</string>
+    <string name="btn_stat">Status</string>
+</resources>
